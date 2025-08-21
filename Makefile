@@ -1,6 +1,6 @@
 CC = cc
 
-CFLAGS = -g
+CFLAGS = -g -Wall -Wextra -Wno-old-style-definition
 
 TARGET = nuweb
 VERSION = 1.64

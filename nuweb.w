@@ -1333,13 +1333,13 @@ this scrap.
   if (dot) {
     *dot = '\0'; /* produce HTML when the file extension is ".hw" */
     html_flag = dot[1] == 'h' && dot[2] == 'w' && dot[3] == '\0';
-    sprintf(tex_name, "%s%s%s.tex", dirpath, path_sep, trim);
-    sprintf(aux_name, "%s%s%s.aux", dirpath, path_sep, trim);
+    snprintf(tex_name, sizeof(tex_name), "%s%s%s.tex", dirpath, path_sep, trim);
+    snprintf(aux_name, sizeof(aux_name), "%s%s%s.aux", dirpath, path_sep, trim);
     *dot = '.';
   }
   else {
-    sprintf(tex_name, "%s%s%s.tex", dirpath, path_sep, trim);
-    sprintf(aux_name, "%s%s%s.aux", dirpath, path_sep, trim);
+    snprintf(tex_name, sizeof(tex_name), "%s%s%s.tex", dirpath, path_sep, trim);
+    snprintf(aux_name, sizeof(aux_name), "%s%s%s.aux", dirpath, path_sep, trim);
     *q++ = '.';
     *q++ = 'w';
     *q = '\0';
@@ -1392,7 +1392,7 @@ is forced when generating HTML.
     }
     else {
       collect_numbers(aux_name);
-      write_tex(source_name, tex_name);
+      write_tex(source_name, tex_name, 0/*Dummy */);
     }
   }
   if (output_flag)
@@ -1408,7 +1408,7 @@ During the first pass, we scan the file, recording the definitions of
 each fragment and file and accumulating all the scraps.
 
 @d Function pro...
-@{extern void pass1();
+@{extern void pass1(char source_name[FILENAME_MAX]);
 @}
 
 
@@ -1469,7 +1469,9 @@ discovered.
     case 'o': @<Build output file definition@>
               break;
     case 'Q':
-    case 'q': quoted = 1;
+    case 'q':
+    	quoted = 1;
+	/* fallthrough */
     case 'D':
     case 'd': @<Build fragment definition@>
               break;
@@ -2043,21 +2045,21 @@ modify nuweb to work with a different typesetting system, this would
 be the place to look.
 
 @d Function...
-@{extern void write_tex();
+@{extern void write_tex(char source_name[FILENAME_MAX], char tex_name[FILENAME_MAX], unsigned char sector);
 @}
 
 We need a few local function declarations before we get into the body
 of \verb|write_tex|.
 
 @o latex.c -cc
-@{static void copy_scrap();             /* formats the body of a scrap */
-static void print_scrap_numbers();      /* formats a list of scrap numbers */
-static void format_entry();             /* formats an index entry */
-static void format_file_entry();        /* formats a file index entry */
-static void format_user_entry();
-static void write_arg();
-static void write_literal();
-static void write_ArglistElement();
+@{static void copy_scrap(FILE *file, int prefix, Name *name);               /* formats the body of a scrap */
+static void print_scrap_numbers(FILE *tex_file, Scrap_Node *scraps);        /* formats a list of scrap numbers */
+static void format_entry(Name *name, FILE *tex_file, unsigned char sector); /* formats an index entry */
+static void format_file_entry(Name* name, FILE *tex_file);                  /* formats a file index entry */
+static void format_user_entry(Name *name, FILE *tex_file, unsigned char sector);
+static void write_arg(FILE *tex_file, char *p);
+static void write_literal(FILE * tex_file, char * p, int mode);
+static void write_ArglistElement(FILE * file, Arglist * args, char ** params);
 @}
 
 
@@ -2069,6 +2071,7 @@ name of the web source file and the name of the \verb|.tex| output file.
      char *tex_name;
      unsigned char sector;
 {
+  (void)sector;
   FILE *tex_file = fopen(tex_name, "w");
   if (tex_file) {
     if (verbose_flag)
@@ -2152,10 +2155,12 @@ an eye peeled for \verb|@@|~characters, which signal a command sequence.
           update_delimit_scrap();
           break;
     case 'O': big_definition = TRUE;
+    	/* fallthrough */
     case 'o': @<Write output file definition@>
               break;
     case 'Q':
     case 'D': big_definition = TRUE;
+    	/* fallthrough */
     case 'q':
     case 'd': @<Write macro definition@>
               break;
@@ -2716,6 +2721,7 @@ this function. It updates the scrap formatting directives accordingly.
     case '-':
     case '*':
     case '|': @<Skip over index entries@>
+    	/* fallthrough */
     case ',':
     case ')':
     case ']':
@@ -3247,29 +3253,31 @@ copies most of the text from the source file straight into a
 cross-reference information is printed out.
 
 @d Function...
-@{extern void write_html();
+@{extern void write_html(char source_name[FILENAME_MAX], char tex_name[FILENAME_MAX], int dummy);
 @}
 
 We need a few local function declarations before we get into the body
 of \verb|write_html|.
 
 @o html.c
-@{static void copy_scrap();               /* formats the body of a scrap */
-static void display_scrap_ref();        /* formats a scrap reference */
-static void display_scrap_numbers();    /* formats a list of scrap numbers */
-static void print_scrap_numbers();      /* pluralizes scrap formats list */
-static void format_entry();             /* formats an index entry */
-static void format_user_entry();
+@{static void copy_scrap(FILE *file, int prefix);                       /* formats the body of a scrap */
+static void display_scrap_ref(FILE *html_file, int num);                /* formats a scrap reference */
+static void display_scrap_numbers(FILE *html_file, Scrap_Node *scraps); /* formats a list of scrap numbers */
+static void print_scrap_numbers(FILE *html_file, Scrap_Node *scraps);   /* pluralizes scrap formats list */
+static void format_entry(Name *name, FILE *html_file, int file_flag);   /* formats an index entry */
+static void format_user_entry(Name *name, FILE *html_file, int sector);
 @}
 
 
 The routine \verb|write_html| takes two file names as parameters: the
 name of the web source file and the name of the \verb|.tex| output file.
 @o html.c
-@{void write_html(file_name, html_name)
+@{void write_html(file_name, html_name, dummy)
      char *file_name;
      char *html_name;
+     int dummy;
 {
+  (void)dummy;
   FILE *html_file = fopen(html_name, "w");
   FILE *tex_file = html_file;
   @<Write LaTeX limbo definitions@>
@@ -3528,6 +3536,7 @@ We must translate HTML special keywords into entities in scraps.
      FILE *file;
      int prefix;
 {
+  (void)prefix;
   int indent = 0;
   int c = source_get();
   while (1) {
@@ -3795,7 +3804,7 @@ pointed out any during the first pass.
 \section{Writing the Output Files} \label{output-files}
 
 @d Function pro...
-@{extern void write_files();
+@{extern void write_files(Name* file_names);
 @}
 
 @o output.c -cc
@@ -3921,7 +3930,7 @@ if (0 != rename(temp_name, real_name)) {
 
 We need two routines to handle reading the source files.
 @d Function pro...
-@{extern void source_open(); /* pass in the name of the source file */
+@{extern void source_open(char* name); /* pass in the name of the source file */
 extern int source_get();   /* no args; returns the next char or EOF */
 extern int source_last;   /* what last source_get() returned. */
 extern int source_peek;   /* The next character to get */
@@ -3978,7 +3987,9 @@ int source_get()
   switch (c) {
     case EOF:  @<Handle \verb|EOF|@>
                return c;
-    case '\n': source_line++;
+    case '\n':
+    	source_line++;
+	/* fallthrough */
     default:
            if (c==nw_char)
              {
@@ -4195,7 +4206,7 @@ static ScrapEntry *SCRAP[SCRAP_SIZE];
 #define scrap_array(i) SCRAP[(i) >> SCRAP_SHIFT][(i) & SCRAP_MASK]
 
 static int scraps;
-int num_scraps()
+int num_scraps(void)
 {
    return scraps;
 };
@@ -4204,17 +4215,32 @@ int num_scraps()
 
 
 @d Function pro...
-@{extern void init_scraps();
+@{typedef int* Parameters;
+extern void init_scraps(void);
 extern int collect_scrap();
-extern int write_scraps();
-extern void write_scrap_ref();
-extern void write_single_scrap_ref();
-extern int num_scraps();
+extern int write_scraps(
+     FILE *file,
+     char * spelling,
+     Scrap_Node *defs,
+     int global_indent,
+     char *indent_chars,
+     char debug_flag,
+     char tab_flag,
+     char indent_flag,
+     unsigned char comment_flag,
+     Arglist * inArgs,
+     char * inParams[9],
+     Parameters parameters,
+     char * title
+);
+extern void write_scrap_ref(FILE *file, int num, int first, int *page);
+extern void write_single_scrap_ref(FILE* file, int num);
+extern int num_scraps(void);
 @}
 
 
 @o scraps.c -cc
-@{void init_scraps()
+@{void init_scraps(void)
 {
   scraps = 1;
   SCRAP[0] = (ScrapEntry *) arena_getmem(SCRAP_SIZE * sizeof(ScrapEntry));
@@ -4614,7 +4640,7 @@ lookup(int n, Arglist * par, char * arg[9], Name **name, Arglist ** args)
 @| instance @}
 
 @d Function prototypes
-@{Arglist * instance();
+@{Arglist * instance(Arglist * a, Arglist * par, char * arg[9], int * ch);
 @}
 
 @d Set up name, args and next
@@ -5009,7 +5035,8 @@ comment_ArglistElement(FILE * file, Arglist * args, int quote)
 @d Include an embedded scrap in comment
 @{Embed_Node * e = (Embed_Node *)q;
 fputc('{', file);
-write_scraps(file, "", e->defs, -1, "", 0, 0, 0, 0, e->args, 0, 1, "");
+int tmp = 1;
+write_scraps(file, "", e->defs, -1, "", 0, 0, 0, 0, e->args, 0, &tmp, "");
 fputc('}', file);@}
 
 @d Include a fragment use in comment
@@ -5035,7 +5062,7 @@ fputc('>', file);@}
 \subsection{Collecting Page Numbers}
 
 @d Function...
-@{extern void collect_numbers();
+@{extern void collect_numbers(char aux_name[FILENAME_MAX]);
 @}
 
 @o scraps.c -cc
@@ -5069,7 +5096,7 @@ to wait for the matching closing brace.
 @d Read line in \verb|.aux| file @{@%
 int scrap_number;
 int page_number;
-int i;
+size_t i;
 int dummy_idx;
 int bracket_depth = 1;
 if (1 == sscanf(aux_line,
@@ -5080,7 +5107,7 @@ if (1 == sscanf(aux_line,
     if (aux_line[i] == '{') bracket_depth++;
     else if (aux_line[i] == '}') bracket_depth--;
   }
-  if (i > dummy_idx
+  if (i > (size_t)dummy_idx
       && i < strlen(aux_line)
       && 1 == sscanf(aux_line+i, "{%d}" ,&page_number)) {
     if (scrap_number < scraps)
@@ -5168,13 +5195,13 @@ int scrap_ended_with;
 @}
 
 @d Function pro...
-@{extern Name *collect_file_name();
-extern Name *collect_macro_name();
-extern Arglist *collect_scrap_name();
-extern Name *name_add();
-extern Name *prefix_add();
-extern char *save_string();
-extern void reverse_lists();
+@{extern Name *collect_file_name(void);
+extern Name *collect_macro_name(void);
+extern Arglist *collect_scrap_name(int current_scrap);
+extern Name *name_add(Name **rt, char *spelling, unsigned char sector);
+extern Name *prefix_add(Name **rt, char *spelling, unsigned char sector);
+extern char *save_string(char* s);
+extern void reverse_lists(Name* names);
 @}
 
 @o names.c -cc
@@ -5219,7 +5246,7 @@ static int compare(x, y)
 @| save_string @}
 
 @o names.c -cc
-@{static int ambiguous_prefix();
+@{static int ambiguous_prefix(Name *node, char *spelling, unsigned char sector);
 
 static char * found_name = NULL;
 
@@ -5239,6 +5266,7 @@ Name *prefix_add(rt, spelling, sector)
                     break;
     case EQUAL:
                     found_name = node->spelling;
+		    /* fallthrough */
     case EXTENSION: if (node->sector > sector) {
                        rt = &node->rlink;
                        break;
@@ -5509,7 +5537,7 @@ char * comment_end[4] = { "", " */", "", ""};
 
 Name terminated by \verb+\n+ or \verb+@@{+; but keep skipping until \verb+@@{+
 @o names.c -cc
-@{Name *collect_macro_name()
+@{Name *collect_macro_name(void)
 {
   char name[MAX_NAME_LEN];
   char args[1000];
@@ -5642,7 +5670,7 @@ while ((c = source_get()) != EOF) {
 }@}
 
 @d Function prototypes
-@{extern Name *install_args();
+@{extern Name *install_args(Name * name, int argc, char *arg[9]);
 @}
 
 @o names.c -cc
@@ -5842,7 +5870,7 @@ tail = &(*tail)->next;
 @}
 
 @o names.c -cc
-@{static Scrap_Node *reverse(); /* a forward declaration */
+@{static Scrap_Node *reverse(Scrap_Node *a); /* a forward declaration */
 
 void reverse_lists(names)
      Name *names;
@@ -6071,8 +6099,8 @@ else if (m->prev)
 @}
 
 @o scraps.c -cc
-@{static void build_gotos();
-static int reject_match();
+@{static void build_gotos(Name *tree);
+static int reject_match(Name *name, char post, ArgManager *reader);
 
 void search()
 {
@@ -6270,8 +6298,8 @@ void search()
 
 @d Forward declarations for scraps.c
 @{
-static void add_uses();
-static int scrap_is_in();
+static void add_uses(Uses * * root, Name *name);
+static int scrap_is_in(Scrap_Node * list, int i);
 @}
 
 @o scraps.c -cc
@@ -6578,7 +6606,7 @@ be allocated. When the storage is no longer required, the entire arena
 is freed with a single call to  \verb|arena_free()|. Both operations
 are quite fast.
 @d Function p...
-@{extern void *arena_getmem();
+@{extern void *arena_getmem(size_t n);
 extern void arena_free();
 @}
 
